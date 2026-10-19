@@ -58,8 +58,11 @@
     return "EVT-7F3A-" + ("000" + (EVENTS.indexOf(e) + 1)).slice(-4);
   }
 
-  function accessBadge(row) {
-    return '<span class="badge ' + (row.access === "write" ? "write" : "read") + '">' + esc(row.access) + "</span>";
+  // The one tag a first-time viewer sees per scope row. Read/write and data class live in Details.
+  function accessTag(row) {
+    return row.access === "write"
+      ? '<span class="badge access-tag edit">Can edit</span>'
+      : '<span class="badge access-tag view">Can view</span>';
   }
 
   function accessText(row) {
@@ -204,13 +207,15 @@
     var key = "scope-" + r.id;
     return (
       '<li class="item">' +
-        '<div class="item-main"><span class="item-label">' + esc(r.plainLabel) + '</span><span class="item-sub">' + esc(r.system) + "</span></div>" +
-        '<div class="item-tags">' + accessBadge(r) + classBadge(r.classification) + "</div>" +
+        '<div class="item-main"><span class="item-label">' + esc(r.plainLabel) + '</span><span class="item-why">' + esc(r.why) + "</span></div>" +
+        '<div class="item-tags">' + accessTag(r) + "</div>" +
         detailsBtn(key) +
         detailsPanel(key, [
+          ["System", esc(r.system)],
           ["Endpoint or resource", "<code>" + esc(r.resource) + "</code>"],
           ["Access", accessText(r)],
-          ["Why it's needed", esc(r.reason)],
+          ["Data classification", classBadge(r.classification)],
+          ["Reason in the plan", esc(r.reason)],
           ["Scope ID", esc(r.id)],
         ]) +
       "</li>"
@@ -224,11 +229,17 @@
         '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M7 3h7l5 5v13H7z M14 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>' +
         esc(C.approve.generated) +
       "</p>";
+    var job =
+      '<section class="job">' +
+        '<p class="eyebrow">The job</p>' +
+        "<p>" + esc(C.approve.job) + "</p>" +
+      "</section>";
     return (
+      job +
       hero(C.approve.headline, C.approve.subline, generated) +
       '<section class="card">' +
         '<div class="card-head row">' +
-          '<div><p class="eyebrow">Deployment ' + esc(d.id) + "</p><h2>" + esc(d.name) + "</h2>" +
+          "<div><h2>" + esc(d.name) + "</h2>" +
           '<p class="muted">' + esc(d.vendor) + " for " + esc(d.customer) + " · FDE " + esc(d.fde) + " · " +
           esc(d.plannedStart) + " – " + esc(d.plannedEnd) + "</p></div>" +
           statusBlock() +
@@ -253,12 +264,12 @@
         '<span class="item-sub"><span class="actor-dot ' + e.actor + '"></span>' + esc(D.actors[e.actor]) + " · " + esc(e.system) + "</span></div>" +
         '<div class="item-tags">' + badge + "</div>" +
         detailsBtn(key) +
-        (oos ? '<p class="flag-note"><strong>Not on the approved list.</strong> ' + esc(e.flag.short) + "</p>" : "") +
+        (oos ? '<p class="flag-note">' + esc(e.flag.plain) + "</p>" : "") +
         detailsPanel(key, [
           ["Action", "<code>" + esc(e.action) + "</code>"],
           ["Record source", esc(e.source)],
           ["Matches approved item", match],
-        ]) +
+        ].concat(oos ? [["Technical detail", esc(e.flag.explanation)]] : [])) +
       "</li>"
     );
   }
@@ -385,13 +396,14 @@
         '<div class="issue">' +
           '<h2 class="issue-title">' + esc(e.plainLabel) + "</h2>" +
           '<dl class="issue-facts">' +
-            "<div><dt>What happened</dt><dd>" + esc(e.flag.explanation) + "</dd></div>" +
+            "<div><dt>What happened</dt><dd>" + esc(e.flag.plain) + "</dd></div>" +
             "<div><dt>When</dt><dd>" + esc(e.ts) + " ET · " + esc(D.actors[e.actor]) + "</dd></div>" +
-            '<div class="next"><dt>Suggested next step</dt><dd><strong>' + esc(e.flag.nextStep) + "</strong>" +
-            '<span class="muted">' + esc(e.flag.nextDetail) + "</span></dd></div>" +
+            '<div class="next"><dt>Suggested next step</dt><dd><strong>' + esc(e.flag.nextStep) + "</strong></dd></div>" +
           "</dl>" +
           detailsBtn(key) +
           detailsPanel(key, [
+            ["Technical detail", esc(e.flag.explanation)],
+            ["Fix options", esc(e.flag.nextDetail)],
             ["Call", "<code>" + esc(e.action) + "</code>"],
             ["Record source", esc(e.source) + " (customer-owned, read-only)"],
             ["Data involved", classBadge(e.flag.dataClass)],
@@ -628,7 +640,7 @@
           var r = scopeById(id);
           return (
             '<li><span class="mono id-pill">' + id + "</span><div><strong>" + esc(r.plainLabel) + "</strong> · " + esc(r.system) +
-            '<div class="scope-link-meta">' + accessBadge(r) + classBadge(r.classification) + "</div></div></li>"
+            '<div class="scope-link-meta">' + accessTag(r) + classBadge(r.classification) + "</div></div></li>"
           );
         }).join("") + "</ul>"
       : '<p class="muted">No scope rows of its own. It reaches Northwind systems only through the other components.</p>';

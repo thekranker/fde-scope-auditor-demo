@@ -20,6 +20,8 @@ window.DEMO = {
   // On-screen copy: one headline and one subline per step.
   copy: {
     approve: {
+      job:
+        "Relay is setting up an AI that drafts replies to Northwind's customer emails. To answer a question like 'Is my windshield covered?', it needs to read the email, look up the customer and their policy, and check Northwind's FAQ. A Northwind employee reviews every draft before it's sent. Below is the access that requires.",
       headline: "Northwind approves exactly what Relay can touch.",
       subline: "Nothing outside this list is allowed.",
       generated: "Generated from Relay's deployment plan and integration code. Reviewed by Priya S. (Relay).",
@@ -48,6 +50,7 @@ window.DEMO = {
     {
       id: "S1",
       plainLabel: "Set up Northwind sign-in (SSO) for the agent",
+      why: "So Northwind's support staff can log in to see the drafts.",
       system: "Okta",
       resource: "SSO app \"Relay Support Agent\": create app, assign pilot group",
       access: "write",
@@ -58,6 +61,7 @@ window.DEMO = {
     {
       id: "S2",
       plainLabel: "Read support tickets",
+      why: "To see the customer's question.",
       system: "Zendesk",
       resource: "Tickets: GET /api/v2/tickets, /tickets/{id}, /tickets/{id}/comments",
       access: "read",
@@ -67,6 +71,7 @@ window.DEMO = {
     {
       id: "S3",
       plainLabel: "Save draft replies as private notes",
+      why: "So a human reviews the reply before it's sent. The AI never sends anything itself.",
       system: "Zendesk",
       resource: "Ticket comments: PUT /api/v2/tickets/{id} (public: false)",
       access: "write",
@@ -77,6 +82,7 @@ window.DEMO = {
     {
       id: "S4",
       plainLabel: "Look up policyholder contact info",
+      why: "To figure out who the customer is.",
       system: "Salesforce",
       resource: "Contact object: Name, Email, Phone",
       access: "read",
@@ -86,6 +92,7 @@ window.DEMO = {
     {
       id: "S5",
       plainLabel: "Look up policy status and coverage",
+      why: "To check what their policy actually covers.",
       system: "Salesforce",
       resource: "Policy__c object: Policy_Number__c, Status__c, Coverage_Type__c, Renewal_Date__c",
       access: "read",
@@ -95,6 +102,7 @@ window.DEMO = {
     {
       id: "S6",
       plainLabel: "Read the claims FAQ",
+      why: "So replies use Northwind's official wording.",
       system: "Northwind Help Center KB",
       resource: "Articles in space \"claims-faq\" (search + read)",
       access: "read",
@@ -104,6 +112,7 @@ window.DEMO = {
     {
       id: "S7",
       plainLabel: "Check open claims cases (optional)",
+      why: "To mention any claim already in progress (optional).",
       system: "Salesforce",
       resource: "Case object: Subject, Status",
       access: "read",
@@ -140,11 +149,13 @@ window.DEMO = {
       component: "C3",
       flag: {
         title: "Salesforce BillingAccount read, not in approved scope",
-        short: "Billing accounts hold payment details. Northwind never approved access to them.",
+        // Plain-language version shown on Watch and in the Report; `explanation` sits behind Details.
+        plain:
+          "On Day 5, Relay added a feature so the AI could answer 'Is my payment late?' To do that, it read the customer's billing account, which includes payment details. Northwind never approved this.",
         explanation:
           "The agent read a BillingAccount record (payment method, balance due). No approved scope row covers BillingAccount. The call came from the Salesforce lookup service after a \"payment status fallback\" change on Day 5.",
         dataClass: "Financial / Confidential",
-        nextStep: "Ask vendor to justify or remove",
+        nextStep: "Ask Relay to either get approval for billing access or remove the feature.",
         nextDetail: "Relay AI either adds BillingAccount to the scope for Northwind to approve, or removes the call (change 5a8e0f7).",
       },
     },

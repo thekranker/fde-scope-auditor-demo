@@ -137,8 +137,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--brand); outline
   white-space: nowrap; border: 1px solid transparent; vertical-align: middle;
 }
 .badge.small { font-size: .68rem; padding: 3px 6px; }
-.badge.read { background: var(--brand-soft); color: var(--brand); text-transform: uppercase; }
-.badge.write { background: var(--warn-soft); color: var(--warn); text-transform: uppercase; }
+.badge.access-tag { font-size: .72rem; font-weight: 600; padding: 4px 8px; }
+.badge.view { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
+.badge.edit { background: var(--warn-soft); color: var(--warn); }
 .badge.cls-pii { background: var(--pii-soft); color: var(--pii); }
 .badge.cls-conf { background: var(--warn-soft); color: var(--warn); }
 .badge.cls-internal { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
@@ -161,6 +162,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--brand); outline
 .alert.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-border); }
 .alert.bad code { background: transparent; }
 
+/* "The job" context panel */
+.job { background: var(--brand-soft); border-left: 4px solid var(--brand); border-radius: var(--radius); padding: 14px 18px; margin: 4px 0 20px; }
+.job .eyebrow { color: var(--brand); }
+.job p:last-child { margin: 0; font-size: 1.02rem; max-width: 860px; }
+
 /* hero headline */
 .hero { margin: 8px 0 20px; }
 .hero h1 { font-size: 2.1rem; letter-spacing: -.01em; max-width: 900px; }
@@ -179,6 +185,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--brand); outline
 .item-main { grid-area: main; display: flex; flex-direction: column; min-width: 0; }
 .item-label { font-weight: 600; font-size: 1rem; }
 .item-sub { display: flex; align-items: center; gap: 6px; font-size: .84rem; color: var(--muted); }
+.item-why { font-size: .88rem; color: var(--text-2); margin-top: 2px; }
 .item-tags { grid-area: tags; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .tag-note { font-size: .82rem; }
 .details-btn {
