@@ -2,8 +2,15 @@
   "use strict";
 
   var D = window.DEMO;
-  var STEPS = ["scope", "activity", "build", "report"];
+  var C = D.copy;
+  var STEPS = ["approve", "watch", "report"];
+  var STEP_LABELS = { approve: "Approve", watch: "Watch", report: "Report" };
+  // Links from the old four-step version still land somewhere sensible.
+  var ALIASES = { scope: "approve", activity: "watch", build: "report" };
   var SIM_INTERVAL_MS = 1000;
+
+  // The live feed and the report both use only the events marked `feed: true`.
+  var EVENTS = D.events.filter(function (e) { return e.feed; });
 
   var state = freshState();
 
@@ -15,6 +22,9 @@
       pausedOnFlag: false,
       timer: null,
       component: "C1",
+      open: {},          // per-row "Details" toggles, keyed by row
+      buildOpen: false,
+      tamperOpen: false,
     };
   }
 
@@ -37,23 +47,31 @@
   }
 
   function flaggedEvents() {
-    return D.events.filter(function (e) { return !e.scopeId; });
+    return EVENTS.filter(function (e) { return !e.scopeId; });
   }
 
   function eventsForScope(id) {
-    return D.events.filter(function (e) { return e.scopeId === id; });
+    return EVENTS.filter(function (e) { return e.scopeId === id; });
+  }
+
+  function recordId(e) {
+    return "EVT-7F3A-" + ("000" + (EVENTS.indexOf(e) + 1)).slice(-4);
   }
 
   function accessBadge(row) {
-    var cls = row.access === "write" ? "badge write" : "badge read";
-    var note = row.accessNote ? '<span class="access-note">' + esc(row.accessNote) + "</span>" : "";
-    return '<span class="' + cls + '">' + esc(row.access) + "</span>" + note;
+    return '<span class="badge ' + (row.access === "write" ? "write" : "read") + '">' + esc(row.access) + "</span>";
+  }
+
+  function accessText(row) {
+    return esc(row.access) + (row.accessNote ? " (" + esc(row.accessNote) + ")" : "");
   }
 
   function classBadge(c) {
     var k = /PII/.test(c) ? "pii" : /Confidential|Financial/.test(c) ? "conf" : "internal";
     return '<span class="badge cls-' + k + '">' + esc(c) + "</span>";
   }
+
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
 
   // Purely visual "hash" for the tamper-evident panel. Not cryptographic.
   function fakeHash(str) {
@@ -71,8 +89,8 @@
 
   function hashChain() {
     var prev = "0".repeat(64);
-    return D.events.map(function (e, i) {
-      var id = "EVT-7F3A-" + ("000" + (i + 1)).slice(-4);
+    return EVENTS.map(function (e) {
+      var id = recordId(e);
       var h = fakeHash(prev + "|" + id + "|" + e.ts + "|" + e.action + "|" + e.source);
       var rec = { id: id, prev: prev, hash: h, event: e };
       prev = h;
@@ -91,11 +109,41 @@
     toastTimer = setTimeout(function () { el.classList.remove("show"); }, 3200);
   }
 
+  // ---------- shared pieces ----------
+
+  function hero(title, sub, extra) {
+    return (
+      '<section class="hero">' +
+        "<h1>" + esc(title) + "</h1>" +
+        '<p class="hero-sub">' + esc(sub) + "</p>" +
+        (extra || "") +
+      "</section>"
+    );
+  }
+
+  function detailsBtn(key) {
+    var open = !!state.open[key];
+    return (
+      '<button type="button" class="details-btn" data-toggle="' + key + '" aria-expanded="' + open +
+      '" aria-controls="d-' + key + '">' + (open ? "Hide details" : "Details") + "</button>"
+    );
+  }
+
+  // rows: [[label, html], ...]
+  function detailsPanel(key, rows) {
+    return (
+      '<dl class="item-details" id="d-' + key + '"' + (state.open[key] ? "" : " hidden") + ">" +
+        rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") +
+      "</dl>"
+    );
+  }
+
   // ---------- routing ----------
 
   function currentStep() {
     var h = (location.hash || "").replace("#", "");
-    return STEPS.indexOf(h) >= 0 ? h : "scope";
+    if (ALIASES[h]) return ALIASES[h];
+    return STEPS.indexOf(h) >= 0 ? h : "approve";
   }
 
   function go(step) {
@@ -104,8 +152,13 @@
   }
 
   function render() {
+    var raw = (location.hash || "").replace("#", "");
+    if (ALIASES[raw]) {
+      if (raw === "build") state.buildOpen = true;
+      history.replaceState(null, "", "#" + ALIASES[raw]);
+    }
     var step = currentStep();
-    if (step !== "activity") stopSim();
+    if (step !== "watch") stopSim();
 
     document.querySelectorAll(".stepper a").forEach(function (a) {
       var s = a.getAttribute("data-step");
@@ -120,32 +173,14 @@
     document.getElementById("prev-btn").disabled = idx === 0;
     var next = document.getElementById("next-btn");
     next.disabled = idx === STEPS.length - 1;
+    next.innerHTML = idx < STEPS.length - 1 ? "Next: " + STEP_LABELS[STEPS[idx + 1]] + " &rarr;" : "Next &rarr;";
 
     var app = document.getElementById("app");
-    app.innerHTML = { scope: viewScope, activity: viewActivity, build: viewBuild, report: viewReport }[step]();
+    app.innerHTML = { approve: viewApprove, watch: viewWatch, report: viewReport }[step]();
     bind(step);
   }
 
-  // ---------- 1. Scope ----------
-
-  function deploymentHeader(extra) {
-    var d = D.deployment;
-    return (
-      '<section class="card deploy-head">' +
-        '<div class="deploy-title">' +
-          '<div><p class="eyebrow">Deployment ' + esc(d.id) + "</p><h1>" + esc(d.name) + "</h1></div>" +
-          (extra || "") +
-        "</div>" +
-        '<dl class="meta">' +
-          "<div><dt>Vendor</dt><dd>" + esc(d.vendor) + "</dd></div>" +
-          "<div><dt>Customer</dt><dd>" + esc(d.customer) + "</dd></div>" +
-          "<div><dt>FDE</dt><dd>" + esc(d.fde) + "</dd></div>" +
-          "<div><dt>Planned dates</dt><dd>" + esc(d.plannedStart) + " – " + esc(d.plannedEnd) + "</dd></div>" +
-        "</dl>" +
-        '<p class="deploy-summary">' + esc(d.summary) + "</p>" +
-      "</section>"
-    );
-  }
+  // ---------- 1. Approve ----------
 
   function statusBlock() {
     if (state.approved) {
@@ -153,7 +188,7 @@
         '<div class="status-block">' +
           '<span class="badge status ok">Approved</span>' +
           '<p class="approval-line">Approved by ' + esc(D.approval.approver) + ", " + esc(D.approval.team) +
-          "<br><span class=\"muted\">" + esc(D.approval.timestamp) + "</span></p>" +
+          '<br><span class="muted">' + esc(D.approval.timestamp) + "</span></p>" +
         "</div>"
       );
     }
@@ -165,79 +200,87 @@
     );
   }
 
-  function scopeTable() {
-    var rows = D.scope.map(function (r) {
-      return (
-        "<tr>" +
-          '<td class="mono id-col">' + esc(r.id) + "</td>" +
-          '<td data-label="System"><strong>' + esc(r.system) + "</strong></td>" +
-          '<td data-label="Endpoint / resource" class="resource">' + esc(r.resource) + "</td>" +
-          '<td data-label="Access">' + accessBadge(r) + "</td>" +
-          '<td data-label="Data">' + classBadge(r.classification) + "</td>" +
-          '<td data-label="Reason" class="reason">' + esc(r.reason) + "</td>" +
-        "</tr>"
-      );
-    }).join("");
+  function scopeItem(r) {
+    var key = "scope-" + r.id;
     return (
-      '<div class="table-wrap"><table class="data-table stack-sm">' +
-        "<thead><tr><th>ID</th><th>System</th><th>Endpoint or resource</th><th>Access</th><th>Data</th><th>Reason</th></tr></thead>" +
-        "<tbody>" + rows + "</tbody></table></div>"
+      '<li class="item">' +
+        '<div class="item-main"><span class="item-label">' + esc(r.plainLabel) + '</span><span class="item-sub">' + esc(r.system) + "</span></div>" +
+        '<div class="item-tags">' + accessBadge(r) + classBadge(r.classification) + "</div>" +
+        detailsBtn(key) +
+        detailsPanel(key, [
+          ["Endpoint or resource", "<code>" + esc(r.resource) + "</code>"],
+          ["Access", accessText(r)],
+          ["Why it's needed", esc(r.reason)],
+          ["Scope ID", esc(r.id)],
+        ]) +
+      "</li>"
     );
   }
 
-  function viewScope() {
+  function viewApprove() {
+    var d = D.deployment;
+    var generated =
+      '<p class="hero-note">' +
+        '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M7 3h7l5 5v13H7z M14 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>' +
+        esc(C.approve.generated) +
+      "</p>";
     return (
-      deploymentHeader(statusBlock()) +
+      hero(C.approve.headline, C.approve.subline, generated) +
       '<section class="card">' +
-        '<div class="card-head"><h2>Requested access</h2><p class="muted">' + D.scope.length +
-        " items requested by " + esc(D.deployment.vendor) + ". Anything not listed here is out of scope.</p></div>" +
-        scopeTable() +
+        '<div class="card-head row">' +
+          '<div><p class="eyebrow">Deployment ' + esc(d.id) + "</p><h2>" + esc(d.name) + "</h2>" +
+          '<p class="muted">' + esc(d.vendor) + " for " + esc(d.customer) + " · FDE " + esc(d.fde) + " · " +
+          esc(d.plannedStart) + " – " + esc(d.plannedEnd) + "</p></div>" +
+          statusBlock() +
+        "</div>" +
+        '<p class="list-caption">' + plural(D.scope.length, "item") + " requested by " + esc(d.vendor) + "</p>" +
+        '<ul class="items">' + D.scope.map(scopeItem).join("") + "</ul>" +
       "</section>"
     );
   }
 
-  // ---------- 2. Live activity ----------
+  // ---------- 2. Watch ----------
 
-  function eventRow(e, isNew) {
+  function eventItem(e, i, isNew) {
     var oos = !e.scopeId;
-    var badge = oos
-      ? '<span class="badge oos">Out of scope</span>'
-      : '<span class="badge ins">In scope · ' + esc(e.scopeId) + "</span>";
-    var flag = oos
-      ? '<div class="flag-note"><strong>' + esc(e.flag.title) + ".</strong> " + esc(e.flag.explanation) + "</div>"
-      : "";
+    var key = "ev-" + i;
+    var badge = oos ? '<span class="badge oos">Outside scope</span>' : '<span class="badge ins">In scope</span>';
+    var match = oos ? "None. Not on the approved list." : esc(e.scopeId) + " · " + esc(scopeById(e.scopeId).plainLabel);
     return (
-      '<li class="event' + (oos ? " is-oos" : "") + (isNew ? " is-new" : "") + '">' +
-        '<div class="ev-time mono">' + esc(e.ts) + "</div>" +
-        '<div class="ev-actor"><span class="actor-dot ' + e.actor + '"></span>' + esc(D.actors[e.actor]) + "</div>" +
-        '<div class="ev-main"><span class="ev-system">' + esc(e.system) + '</span><code class="ev-action">' + esc(e.action) + "</code></div>" +
-        '<div class="ev-source"><span class="src-label">Source</span> ' + esc(e.source) + "</div>" +
-        '<div class="ev-badge">' + badge + "</div>" +
-        flag +
+      '<li class="item event' + (oos ? " is-oos" : "") + (isNew ? " is-new" : "") + '">' +
+        '<div class="ev-time">' + esc(e.ts) + "</div>" +
+        '<div class="item-main"><span class="item-label">' + esc(e.plainLabel) + "</span>" +
+        '<span class="item-sub"><span class="actor-dot ' + e.actor + '"></span>' + esc(D.actors[e.actor]) + " · " + esc(e.system) + "</span></div>" +
+        '<div class="item-tags">' + badge + "</div>" +
+        detailsBtn(key) +
+        (oos ? '<p class="flag-note"><strong>Not on the approved list.</strong> ' + esc(e.flag.short) + "</p>" : "") +
+        detailsPanel(key, [
+          ["Action", "<code>" + esc(e.action) + "</code>"],
+          ["Record source", esc(e.source)],
+          ["Matches approved item", match],
+        ]) +
       "</li>"
     );
   }
 
   function feedItems(newIndex) {
-    var list = D.events.slice(0, state.shown);
-    if (!list.length) {
-      return '<li class="empty">No events yet. Click <strong>Start simulation</strong> to replay the deployment week.</li>';
+    if (!state.shown) {
+      return '<li class="empty">No actions yet. Click <strong>Start simulation</strong> to replay the deployment week.</li>';
     }
     // newest first so the latest event stays visible on a shared screen
-    return list.map(function (e, i) { return eventRow(e, i === newIndex); }).reverse().join("");
+    return EVENTS.slice(0, state.shown).map(function (e, i) { return eventItem(e, i, i === newIndex); }).reverse().join("");
   }
 
   function feedCounts() {
-    var shownEvents = D.events.slice(0, state.shown);
-    var oos = shownEvents.filter(function (e) { return !e.scopeId; }).length;
+    var oos = EVENTS.slice(0, state.shown).filter(function (e) { return !e.scopeId; }).length;
     return (
-      '<span class="count"><strong>' + state.shown + "</strong> / " + D.events.length + " events</span>" +
-      '<span class="count ' + (oos ? "bad" : "") + '"><strong>' + oos + "</strong> out of scope</span>"
+      '<span class="count"><strong>' + state.shown + "</strong> of " + EVENTS.length + " actions checked</span>" +
+      '<span class="count ' + (oos ? "bad" : "") + '"><strong>' + oos + "</strong> outside scope</span>"
     );
   }
 
   function simButtons() {
-    var done = state.shown >= D.events.length;
+    var done = state.shown >= EVENTS.length;
     var label = state.running ? "Pause" : state.shown === 0 ? "Start simulation" : done ? "Replay" : "Resume";
     return (
       '<button class="btn" id="sim-btn" type="button">' + label + "</button>" +
@@ -248,29 +291,28 @@
 
   function pausedNote() {
     return state.pausedOnFlag
-      ? '<div class="alert bad" id="paused-note"><strong>Out-of-scope activity detected.</strong> Simulation paused so you can look at it. Click Resume to continue.</div>'
+      ? '<div class="alert bad" id="paused-note"><strong>Outside-scope action detected.</strong> The simulation paused so you can look at it. Click Resume to continue.</div>'
       : "";
   }
 
-  function viewActivity() {
+  function viewWatch() {
     var notApproved = state.approved
       ? ""
-      : '<div class="alert warn">Scope has not been approved yet. Events are being checked against the <a href="#scope">requested scope</a>.</div>';
+      : '<div class="alert warn">Scope hasn\'t been approved yet. Actions are being checked against the <a href="#approve">requested list</a>.</div>';
     return (
+      hero(C.watch.headline, C.watch.subline) +
       '<section class="card">' +
-        '<div class="card-head row">' +
-          "<div><h2>Live activity</h2>" +
-          '<p class="muted">Independent, read-only watcher for ' + esc(D.deployment.name) + ".</p></div>" +
+        '<div class="feed-bar">' +
+          '<div class="feed-counts" id="feed-counts">' + feedCounts() + "</div>" +
           '<div class="sim-controls" id="sim-controls">' + simButtons() + "</div>" +
         "</div>" +
-        '<div class="provenance">' +
-          '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>' +
-          "<p>Records are read from " + esc(D.deployment.customer) + "'s own logs (Okta System Log, Zendesk audit log, Salesforce Event Monitoring, API gateway) and stored append-only. The FDE cannot edit them.</p>" +
-        "</div>" +
         notApproved +
-        '<div class="feed-bar" id="feed-counts">' + feedCounts() + "</div>" +
         '<div id="paused-wrap">' + pausedNote() + "</div>" +
-        '<ol class="feed" id="feed">' + feedItems(-1) + "</ol>" +
+        '<ol class="items feed" id="feed">' + feedItems(-1) + "</ol>" +
+        '<p class="fine source-note">' +
+          '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>' +
+          esc(C.watch.sources) +
+        "</p>" +
       "</section>"
     );
   }
@@ -286,19 +328,19 @@
   }
 
   function tick() {
-    if (state.shown >= D.events.length) { stopSim(); refreshFeed(-1); return; }
-    var e = D.events[state.shown];
+    if (state.shown >= EVENTS.length) { stopSim(); refreshFeed(-1); return; }
+    var e = EVENTS[state.shown];
     state.shown++;
     if (!e.scopeId) {
       stopSim();
       state.pausedOnFlag = true;
     }
-    if (state.shown >= D.events.length) stopSim();
+    if (state.shown >= EVENTS.length) stopSim();
     refreshFeed(state.shown - 1);
   }
 
   function startSim() {
-    if (state.shown >= D.events.length) state.shown = 0;
+    if (state.shown >= EVENTS.length) state.shown = 0;
     state.pausedOnFlag = false;
     state.running = true;
     tick();
@@ -321,7 +363,7 @@
     document.getElementById("showall-btn").onclick = function () {
       stopSim();
       state.pausedOnFlag = false;
-      state.shown = D.events.length;
+      state.shown = EVENTS.length;
       refreshFeed(-1);
     };
     document.getElementById("clear-btn").onclick = function () {
@@ -332,17 +374,194 @@
     };
   }
 
-  // ---------- 3. How it was built ----------
+  // ---------- 3. Report ----------
+
+  function issueCard(flags) {
+    if (!flags.length) return "";
+    var issues = flags.map(function (e, i) {
+      var comp = componentById(e.component);
+      var key = "issue-" + i;
+      return (
+        '<div class="issue">' +
+          '<h2 class="issue-title">' + esc(e.plainLabel) + "</h2>" +
+          '<dl class="issue-facts">' +
+            "<div><dt>What happened</dt><dd>" + esc(e.flag.explanation) + "</dd></div>" +
+            "<div><dt>When</dt><dd>" + esc(e.ts) + " ET · " + esc(D.actors[e.actor]) + "</dd></div>" +
+            '<div class="next"><dt>Suggested next step</dt><dd><strong>' + esc(e.flag.nextStep) + "</strong>" +
+            '<span class="muted">' + esc(e.flag.nextDetail) + "</span></dd></div>" +
+          "</dl>" +
+          detailsBtn(key) +
+          detailsPanel(key, [
+            ["Call", "<code>" + esc(e.action) + "</code>"],
+            ["Record source", esc(e.source) + " (customer-owned, read-only)"],
+            ["Data involved", classBadge(e.flag.dataClass)],
+            ["Made by", esc(comp.name)],
+            ["Record ID", '<span class="mono">' + recordId(e) + "</span>"],
+          ]) +
+        "</div>"
+      );
+    }).join("");
+    return (
+      '<section class="card issue-card">' +
+        '<div class="issue-head"><span class="issue-count">' + plural(flags.length, "issue") + " found</span>" +
+        '<span class="badge oos">Outside scope</span></div>' +
+        issues +
+      "</section>"
+    );
+  }
+
+  function reportItem(r) {
+    var evs = eventsForScope(r.id);
+    var key = "rep-" + r.id;
+    var status = evs.length
+      ? '<span class="badge ins">Used</span><span class="muted tag-note">' + plural(evs.length, "time") + "</span>"
+      : '<span class="badge neutral">Not used</span>';
+    var activity = evs.length
+      ? "<ul class=\"plain-list\">" + evs.map(function (e) { return "<li>" + esc(e.ts) + " · " + esc(e.plainLabel) + "</li>"; }).join("") + "</ul>"
+      : "None recorded. Consider removing this access.";
+    return (
+      '<li class="item">' +
+        '<div class="item-main"><span class="item-label">' + esc(r.plainLabel) + '</span><span class="item-sub">' + esc(r.system) + "</span></div>" +
+        '<div class="item-tags">' + status + "</div>" +
+        detailsBtn(key) +
+        detailsPanel(key, [
+          ["Endpoint or resource", "<code>" + esc(r.resource) + "</code>"],
+          ["Access", accessText(r)],
+          ["Recorded activity", activity],
+        ]) +
+      "</li>"
+    );
+  }
+
+  function reportOosItem(e, i) {
+    var key = "rep-oos-" + i;
+    return (
+      '<li class="item is-oos">' +
+        '<div class="item-main"><span class="item-label">' + esc(e.plainLabel) + '</span><span class="item-sub">' + esc(e.system) + "</span></div>" +
+        '<div class="item-tags"><span class="badge oos">Not approved</span><span class="muted tag-note">1 time</span></div>' +
+        detailsBtn(key) +
+        detailsPanel(key, [
+          ["Action", "<code>" + esc(e.action) + "</code>"],
+          ["When", esc(e.ts) + " ET"],
+          ["Record source", esc(e.source)],
+        ]) +
+      "</li>"
+    );
+  }
+
+  function stat(n, label, tone) {
+    return '<div class="stat' + (tone ? " " + tone : "") + '"><span class="stat-n">' + n + '</span><span class="stat-l">' + esc(label) + "</span></div>";
+  }
+
+  function fold(id, open, title, sub, badge, body) {
+    return (
+      '<details class="fold" id="' + id + '"' + (open ? " open" : "") + ">" +
+        "<summary>" +
+          '<span class="fold-text"><span class="fold-title">' + esc(title) + '</span><span class="fold-sub">' + esc(sub) + "</span></span>" +
+          (badge || "") +
+          '<span class="fold-chev" aria-hidden="true"></span>' +
+        "</summary>" +
+        '<div class="fold-body">' + body + "</div>" +
+      "</details>"
+    );
+  }
+
+  function viewReport() {
+    var flags = flaggedEvents();
+    var used = D.scope.filter(function (r) { return eventsForScope(r.id).length > 0; });
+    var headline = flags.length
+      ? plural(flags.length, "action") + " went outside the approved scope."
+      : "Every action stayed within the approved scope.";
+    var approvalLine = state.approved
+      ? "Approved scope: signed off by " + esc(D.approval.approver) + ", " + esc(D.approval.team) + " on " + esc(D.approval.timestamp) + "."
+      : 'Scope not yet approved in this demo. <a href="#approve">Approve it on step 1</a>.';
+
+    var shared =
+      '<div class="shared-note">' +
+        "<p>" + esc(C.report.shared) + "</p>" +
+        '<div class="report-actions">' +
+          '<button class="btn ghost" id="pdf-btn" type="button">Export PDF</button>' +
+          '<button class="btn" id="send-btn" type="button">Send to ' + esc(D.sendTo) + "</button>" +
+        "</div>" +
+      "</div>";
+
+    var summary =
+      '<section class="card">' +
+        '<div class="stats">' +
+          stat(D.scope.length, "Approved items") +
+          stat(used.length, "Items used") +
+          stat(EVENTS.length, "Actions recorded") +
+          stat(flags.length, "Outside scope", flags.length ? "bad" : "ok") +
+        "</div>" +
+        '<p class="approval-strip' + (state.approved ? "" : " warn") + '">' + approvalLine + "</p>" +
+        '<p class="fine">' + esc(C.report.disclaimer) + "</p>" +
+      "</section>";
+
+    var compare =
+      '<section class="card">' +
+        '<div class="card-head"><h2>Approved list vs. what actually happened</h2></div>' +
+        '<ul class="items">' + D.scope.map(reportItem).join("") + flags.map(reportOosItem).join("") + "</ul>" +
+      "</section>";
+
+    var flaggedChanges = 0;
+    D.phases.forEach(function (p) { p.changes.forEach(function (c) { if (c.flagged) flaggedChanges++; }); });
+    var build = fold(
+      "build", state.buildOpen, "See how it was built",
+      "Timeline, components and data flow, reconstructed from the recorded activity.",
+      flaggedChanges ? '<span class="badge oos small">' + plural(flaggedChanges, "flagged change") + "</span>" : "",
+      viewBuild()
+    );
+
+    var chain = hashChain();
+    var tamper = fold(
+      "tamper", state.tamperOpen, "Tamper-evident record",
+      "Each record includes the hash of the one before it, so editing or deleting any record breaks the chain.",
+      '<span class="badge ins small">Chain intact · ' + chain.length + " records</span>",
+      tamperBody(chain)
+    );
+
+    return (
+      hero(headline, flags.length ? C.report.subline : C.report.sublineClean, shared) +
+      issueCard(flags) +
+      summary +
+      compare +
+      build +
+      tamper
+    );
+  }
+
+  function tamperBody(chain) {
+    var tail = chain.slice(-5).reverse();
+    return (
+      '<section class="card">' +
+        '<div class="chain">' +
+          tail.map(function (r) {
+            return (
+              '<div class="chain-rec' + (r.event.scopeId ? "" : " is-oos") + '">' +
+                '<div class="chain-id mono">' + r.id + "</div>" +
+                '<div class="chain-hash"><span class="muted">prev</span> <code>' + short(r.prev) + "</code></div>" +
+                '<div class="chain-hash"><span class="muted">hash</span> <code>' + short(r.hash) + "</code></div>" +
+                '<div class="chain-what muted">' + esc(r.event.ts) + " · " + esc(r.event.system) + "</div>" +
+              "</div>"
+            );
+          }).join("") +
+        "</div>" +
+        '<p class="fine">Showing the 5 most recent records. Chain head: <code>' + chain[chain.length - 1].hash + "</code>. Illustrative only.</p>" +
+      "</section>"
+    );
+  }
+
+  // ---------- How it was built (inside the report) ----------
 
   function viewBuild() {
     var summary =
       '<section class="card summary-card">' +
         '<p class="eyebrow">Plain-language summary</p>' +
-        '<h2>What Priya S. built for ' + esc(D.deployment.customer) + "</h2>" +
+        "<h2>What " + esc(D.deployment.fde) + " built for " + esc(D.deployment.customer) + "</h2>" +
         D.buildSummary.map(function (p, i) {
           return "<p" + (i === D.buildSummary.length - 1 ? ' class="summary-flag"' : "") + ">" + esc(p) + "</p>";
         }).join("") +
-        '<p class="fine">Reconstructed from ' + D.events.length + " recorded events and the vendor's change history. Describes what was built and touched, not whether the agent's replies are correct.</p>" +
+        '<p class="fine">Reconstructed from ' + EVENTS.length + " recorded actions and the vendor's change history. Describes what was built and touched, not whether the agent's replies are correct.</p>" +
       "</section>";
 
     var timeline =
@@ -361,7 +580,7 @@
                     p.changes.map(function (c) {
                       return (
                         '<li class="' + (c.flagged ? "flagged" : "") + '"><code>' + esc(c.ref) + "</code> " + esc(c.text) +
-                        (c.flagged ? ' <span class="badge oos">Out of scope</span>' : "") + "</li>"
+                        (c.flagged ? ' <span class="badge oos">Outside scope</span>' : "") + "</li>"
                       );
                     }).join("") +
                   "</ul>" +
@@ -389,7 +608,7 @@
                 '" data-comp="' + c.id + '" aria-selected="' + (state.component === c.id) + '">' +
                   '<span class="comp-name">' + esc(c.name) + "</span>" +
                   '<span class="comp-sys muted">' + esc(c.systems.join(", ")) + "</span>" +
-                  (bad ? '<span class="badge oos small">1 out of scope</span>' : "") +
+                  (bad ? '<span class="badge oos small">1 outside scope</span>' : "") +
                 "</button>"
               );
             }).join("") +
@@ -403,12 +622,12 @@
 
   function componentDetail() {
     var c = componentById(state.component);
-    var evCount = D.events.filter(function (e) { return e.component === c.id; }).length;
+    var evCount = EVENTS.filter(function (e) { return e.component === c.id; }).length;
     var scopeRows = c.scopeIds.length
       ? '<ul class="scope-links">' + c.scopeIds.map(function (id) {
           var r = scopeById(id);
           return (
-            '<li><span class="mono id-pill">' + id + "</span><div><strong>" + esc(r.system) + "</strong> · " + esc(r.resource) +
+            '<li><span class="mono id-pill">' + id + "</span><div><strong>" + esc(r.plainLabel) + "</strong> · " + esc(r.system) +
             '<div class="scope-link-meta">' + accessBadge(r) + classBadge(r.classification) + "</div></div></li>"
           );
         }).join("") + "</ul>"
@@ -424,9 +643,9 @@
       '<dl class="kv">' +
         "<div><dt>Systems</dt><dd>" + esc(c.systems.join(", ")) + "</dd></div>" +
         "<div><dt>Permissions</dt><dd>" + esc(c.permissions.join("; ")) + "</dd></div>" +
-        "<div><dt>Recorded events</dt><dd>" + evCount + "</dd></div>" +
+        "<div><dt>Recorded actions</dt><dd>" + evCount + "</dd></div>" +
       "</dl>" +
-      '<h4>Linked scope rows</h4>' + scopeRows + oos
+      "<h4>Linked scope rows</h4>" + scopeRows + oos
     );
   }
 
@@ -434,7 +653,7 @@
     var arrow = '<div class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 40 16"><path d="M0 8h34M28 2l7 6-7 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>';
     var nodes = D.dataFlow.map(function (n) {
       var branch = n.id === "f3"
-        ? '<div class="flow-branch"><span class="branch-line" aria-hidden="true"></span><div class="flow-node oos-node"><strong>BillingAccount</strong><span>Read once on Fri 9 Oct</span><span class="badge oos small">Out of scope</span></div></div>'
+        ? '<div class="flow-branch"><span class="branch-line" aria-hidden="true"></span><div class="flow-node oos-node"><strong>BillingAccount</strong><span>Read once on Fri 9 Oct</span><span class="badge oos small">Outside scope</span></div></div>'
         : "";
       return (
         '<div class="flow-cell">' +
@@ -458,127 +677,10 @@
     );
   }
 
-  // ---------- 4. Report ----------
-
-  function viewReport() {
-    var used = D.scope.filter(function (r) { return eventsForScope(r.id).length > 0; });
-    var flags = flaggedEvents();
-    var approvalLine = state.approved
-      ? "Approved scope: signed off by " + esc(D.approval.approver) + ", " + esc(D.approval.team) + " on " + esc(D.approval.timestamp) + "."
-      : 'Scope not yet approved in this demo. <a href="#scope">Approve it on step 1</a>.';
-
-    var stats =
-      '<div class="stats">' +
-        stat(D.scope.length, "Approved items") +
-        stat(used.length, "Items actually used") +
-        stat(D.events.length, "Events recorded") +
-        stat(flags.length, "Out-of-scope events", flags.length ? "bad" : "ok") +
-      "</div>";
-
-    var rows = D.scope.map(function (r) {
-      var n = eventsForScope(r.id).length;
-      var status = n
-        ? '<span class="badge ins">Used</span> <span class="muted">' + n + " event" + (n === 1 ? "" : "s") + "</span>"
-        : '<span class="badge neutral">Not used</span> <span class="muted">Consider removing access</span>';
-      return (
-        "<tr>" +
-          '<td class="mono id-col">' + r.id + "</td>" +
-          '<td data-label="System"><strong>' + esc(r.system) + "</strong></td>" +
-          '<td data-label="Resource" class="resource">' + esc(r.resource) + "</td>" +
-          '<td data-label="Access">' + accessBadge(r) + "</td>" +
-          '<td data-label="Status">' + status + "</td>" +
-        "</tr>"
-      );
-    }).join("");
-    rows += flags.map(function (e) {
-      return (
-        '<tr class="row-oos">' +
-          '<td class="mono id-col">—</td>' +
-          '<td data-label="System"><strong>' + esc(e.system) + "</strong></td>" +
-          '<td data-label="Resource" class="resource"><code>' + esc(e.action) + "</code></td>" +
-          '<td data-label="Access"><span class="badge read">read</span></td>' +
-          '<td data-label="Status"><span class="badge oos">Not approved</span> <span class="muted">Used 1 time</span></td>' +
-        "</tr>"
-      );
-    }).join("");
-
-    var flagCards = flags.map(function (e) {
-      var comp = componentById(e.component);
-      return (
-        '<section class="card flag-card">' +
-          '<div class="card-head row"><div><p class="eyebrow bad">Flag · ' + esc(e.flag.recordId) + "</p><h2>" + esc(e.flag.title) + "</h2></div>" +
-          '<span class="badge oos">Out of scope</span></div>' +
-          '<dl class="kv two">' +
-            "<div><dt>What happened</dt><dd>" + esc(e.flag.explanation) + "</dd></div>" +
-            "<div><dt>When</dt><dd>" + esc(e.ts) + " ET</dd></div>" +
-            "<div><dt>Actor</dt><dd>" + esc(D.actors[e.actor]) + " (" + esc(comp.name) + ")</dd></div>" +
-            "<div><dt>Call</dt><dd><code>" + esc(e.action) + "</code></dd></div>" +
-            "<div><dt>Record source</dt><dd>" + esc(e.source) + " (customer-owned, read-only)</dd></div>" +
-            "<div><dt>Data involved</dt><dd>" + classBadge(e.flag.dataClass) + "</dd></div>" +
-          "</dl>" +
-          '<div class="next-step"><span class="eyebrow">Suggested next step</span><strong>' + esc(e.flag.nextStep) + "</strong>" +
-          "<span class=\"muted\">Relay AI either adds BillingAccount to the scope for " + esc(D.deployment.customer) + " to approve, or removes the call (change 5a8e0f7).</span></div>" +
-        "</section>"
-      );
-    }).join("");
-
-    var chain = hashChain();
-    var tail = chain.slice(-5).reverse();
-    var tamper =
-      '<section class="card">' +
-        '<div class="card-head row"><div><h2>Tamper-evident record</h2>' +
-        '<p class="muted">Each record includes the hash of the one before it, so editing or deleting any record breaks the chain.</p></div>' +
-        '<span class="badge ins">Chain intact · ' + chain.length + " records</span></div>" +
-        '<div class="chain">' +
-          tail.map(function (r) {
-            var oos = !r.event.scopeId;
-            return (
-              '<div class="chain-rec' + (oos ? " is-oos" : "") + '">' +
-                '<div class="chain-id mono">' + r.id + "</div>" +
-                '<div class="chain-hash"><span class="muted">prev</span> <code>' + short(r.prev) + "</code></div>" +
-                '<div class="chain-hash"><span class="muted">hash</span> <code>' + short(r.hash) + "</code></div>" +
-                '<div class="chain-what muted">' + esc(r.event.ts) + " · " + esc(r.event.system) + "</div>" +
-              "</div>"
-            );
-          }).join("") +
-        "</div>" +
-        '<p class="fine">Showing the 5 most recent records. Chain head: <code>' + chain[chain.length - 1].hash + "</code>. Illustrative only.</p>" +
-      "</section>";
-
-    var actions =
-      '<div class="report-actions">' +
-        '<button class="btn ghost" id="pdf-btn" type="button">Export PDF</button>' +
-        '<button class="btn" id="send-btn" type="button">Send to ' + esc(D.sendTo) + "</button>" +
-      "</div>";
-
-    return (
-      '<section class="card report-head">' +
-        '<div class="card-head row"><div><p class="eyebrow">Scope compliance report</p><h1>' + esc(D.deployment.name) + "</h1>" +
-        '<p class="muted">' + esc(D.deployment.vendor) + " for " + esc(D.deployment.customer) + " · FDE " + esc(D.deployment.fde) + " · " +
-        esc(D.deployment.plannedStart) + " – " + esc(D.deployment.plannedEnd) + "</p></div>" + actions + "</div>" +
-        stats +
-        '<p class="approval-strip' + (state.approved ? "" : " warn") + '">' + approvalLine + "</p>" +
-        '<p class="fine">This report shows whether recorded activity stayed within the approved scope. It does not assess whether the agent\'s replies are correct.</p>' +
-      "</section>" +
-      '<section class="card">' +
-        '<div class="card-head"><h2>Approved scope vs. actual activity</h2></div>' +
-        '<div class="table-wrap"><table class="data-table stack-sm">' +
-          "<thead><tr><th>ID</th><th>System</th><th>Resource</th><th>Access</th><th>Status</th></tr></thead>" +
-          "<tbody>" + rows + "</tbody></table></div>" +
-      "</section>" +
-      flagCards +
-      tamper
-    );
-  }
-
-  function stat(n, label, tone) {
-    return '<div class="stat' + (tone ? " " + tone : "") + '"><span class="stat-n">' + n + '</span><span class="stat-l">' + esc(label) + "</span></div>";
-  }
-
   // ---------- events ----------
 
   function bind(step) {
-    if (step === "scope") {
+    if (step === "approve") {
       var b = document.getElementById("approve-btn");
       if (b) b.onclick = function () {
         state.approved = true;
@@ -586,8 +688,12 @@
         toast("Scope approved by " + D.approval.approver + ", " + D.approval.team);
       };
     }
-    if (step === "activity") bindSimButtons();
-    if (step === "build") {
+    if (step === "watch") bindSimButtons();
+    if (step === "report") {
+      document.getElementById("pdf-btn").onclick = function () { toast("PDF export is not available in this mockup."); };
+      document.getElementById("send-btn").onclick = function () { toast("Report sent to " + D.sendTo + " (simulated)."); };
+      document.getElementById("build").addEventListener("toggle", function () { state.buildOpen = this.open; });
+      document.getElementById("tamper").addEventListener("toggle", function () { state.tamperOpen = this.open; });
       document.querySelectorAll("[data-comp]").forEach(function (el) {
         el.addEventListener("click", function () {
           state.component = el.getAttribute("data-comp");
@@ -603,11 +709,20 @@
         });
       });
     }
-    if (step === "report") {
-      document.getElementById("pdf-btn").onclick = function () { toast("PDF export is not available in this mockup."); };
-      document.getElementById("send-btn").onclick = function () { toast("Report sent to " + D.sendTo + " (simulated)."); };
-    }
   }
+
+  // "Details" toggles on any row, on any screen.
+  document.getElementById("app").addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-toggle]");
+    if (!btn) return;
+    var key = btn.getAttribute("data-toggle");
+    var open = !state.open[key];
+    state.open[key] = open;
+    btn.setAttribute("aria-expanded", open);
+    btn.textContent = open ? "Hide details" : "Details";
+    var panel = document.getElementById("d-" + key);
+    if (panel) panel.hidden = !open;
+  });
 
   function move(delta) {
     var i = STEPS.indexOf(currentStep()) + delta;
@@ -622,7 +737,7 @@
   document.getElementById("reset-btn").onclick = function () {
     stopSim();
     state = freshState();
-    go("scope");
+    go("approve");
     toast("Demo reset.");
   };
   document.addEventListener("keydown", function (e) {

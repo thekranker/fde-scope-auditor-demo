@@ -24,36 +24,36 @@ Be accurate about the claim: the report shows the work **stayed within the appro
 - **Deployment:** a support agent that reads tickets in Zendesk and looks up policyholder records in Salesforce, then drafts replies
 - Use only made-up company and person names. Real product names for the systems being integrated (Zendesk, Salesforce, Okta) are fine.
 
-## The four screens
-Navigation: a simple 4-step stepper or tabs (Scope → Live activity → How it was built → Report) so the presenter can click through in order during a screen share.
+## The three steps
+Navigation: a 3-step stepper (Approve → Watch → Report) with Back/Next buttons and ← → keys, so the presenter can click through in order during a screen share. Hashes are `#approve`, `#watch`, `#report`; the old `#scope`, `#activity` and `#build` links redirect (`#build` opens the build section in the Report).
 
-### 1. Scope
-- Header: deployment name, vendor, customer, FDE, planned dates
-- Table of requested access, about 6 rows: system, endpoint or resource, access type (read/write), data classification (e.g. PII), reason
-  - Examples: Zendesk tickets (read), Zendesk ticket comments (write, draft replies only), Salesforce Contact (read), Salesforce Policy__c (read), Okta SSO app assignment, an internal FAQ knowledge base (read)
-- Status badge "Pending security review" and an **Approve scope** button. Clicking it records the approver (e.g. "Approved by M. Chen, Northwind Security") with a timestamp and moves status to "Approved".
+Design rule: a first-time viewer should get the point of each screen in a few seconds. Every screen opens with a big plain-language headline and one short subline. Rows show a plain description first (`plainLabel`); endpoints, SOQL, record sources and reasons sit behind a per-row **Details** toggle.
 
-### 2. Live activity
-- A feed of events that plays in when the presenter clicks **Start simulation** (events appear every ~1 second; also a "Show all" option)
-- Each event: timestamp, actor (FDE Priya S. or "Relay support agent"), system, action/endpoint, source of the record (e.g. "Salesforce Event Monitoring", "Zendesk audit log", "API gateway"), and an in-scope / out-of-scope badge
-- About 15 to 20 events, mostly in scope
-- **Exactly one out-of-scope event** partway through, the moment the demo is built around: e.g. the agent calls a Salesforce `BillingAccount` endpoint that was never in the approved scope. It should stand out clearly (red badge, short explanation)
-- Small note on the screen: records are read from the customer's own logs and stored append-only; the FDE cannot edit them
+### 1. Approve
+- Headline "Northwind approves exactly what Relay can touch." / "Nothing outside this list is allowed."
+- Line under it: "Generated from Relay's deployment plan and integration code. Reviewed by Priya S. (Relay)." (shows the scope wasn't typed in by hand)
+- Deployment card: name, vendor, customer, FDE, planned dates
+- 7 requested-access rows: plain label, system, read/write badge, data classification badge, Details (endpoint/resource, access note, reason, scope ID)
+- Status badge "Pending security review" and an **Approve scope** button. Clicking it records "Approved by M. Chen, Northwind Security" with a timestamp and moves status to "Approved"
 
-### 3. How it was built (implementation walkthrough)
-The screen a security reviewer starts from. It explains the FDE's work in plain language, reconstructed from the recorded activity.
-- **Work timeline:** the FDE's phases in order, e.g. Day 1 SSO setup in Okta, Days 2-3 Zendesk integration, Day 4 Salesforce policy lookup, Day 5 agent workflow and prompt configuration, Day 6 testing on sample tickets. Each phase lists its key steps and a few fake commit or config-change summaries
-- **Components:** the pieces that were built (e.g. Zendesk connector, Salesforce lookup service, reply-drafting agent). Clicking a component shows which systems, endpoints and permissions it uses, linked back to the matching scope rows
-- **Data flow diagram:** Zendesk ticket → Relay agent → Salesforce read (policy lookup) → draft reply → Zendesk comment. Mark where PII moves, what is stored, retention, and that ticket text is sent to the vendor's model provider
-- **Plain-language summary** at the top, 3-4 sentences a compliance reviewer can read in 30 seconds
-- The out-of-scope `BillingAccount` call should appear here too, attached to the component that made it, so the reviewer sees where in the build it came from
+### 2. Watch
+- Headline "Every action is checked against the approved list." / "Records come from Northwind's own logs. The FDE can't edit them."
+- **Start simulation** plays 8 actions, one per second; also Show all and Clear
+- Each row: timestamp, plain label, actor and system, in-scope / outside-scope badge, Details (action/endpoint, record source, matching approved item)
+- **Exactly one outside-scope action**, 7th of 8 (about 6 seconds in): the agent reads a Salesforce `BillingAccount` record. The simulation pauses, a red banner appears, and the row is red with a short explanation
+- Small note at the bottom: record sources, stored append-only
 
-### 4. Report
-- Summary at top: approved items vs. items actually used, number of events, number of out-of-scope events
-- Comparison table: each approved scope item with used / not used, plus the unapproved item flagged
-- Flag detail for the out-of-scope event: what happened, when, which actor, where the record came from, suggested next step ("Ask vendor to justify or remove")
-- A "Tamper-evident record" panel showing a fake hash chain or record ID to illustrate that the log is append-only (purely visual)
-- A fake **Export PDF** / **Send to Northwind Security** button (can just show a toast)
+### 3. Report
+Top to bottom:
+1. Headline "1 action went outside the approved scope." / "Everything else matched what Northwind approved." (computed from the data)
+2. Shared note: "Shared with Northwind Security and Relay AI. Gives Northwind proof the deployment stayed in scope, and gives Relay proof its FDE did too." with fake **Export PDF** / **Send to Northwind Security** buttons (toast only)
+3. Large red "1 issue found" card: what happened, when, suggested next step ("Ask vendor to justify or remove"); Details holds the call, record source, data class, component and record ID
+4. Small stats (approved items, items used, actions recorded, outside scope), approval line, and the line saying the report does not assess whether the agent's replies are correct
+5. Approved list vs. what actually happened: each scope item used / not used, plus the unapproved item flagged, with Details toggles
+6. **See how it was built** (collapsed, expands in place): plain-language summary, work timeline with fake commits/config changes, components (click to see systems, permissions and linked scope rows), data flow diagram (PII, model provider, storage/retention). The `BillingAccount` call appears attached to the Salesforce lookup service and change 5a8e0f7
+7. **Tamper-evident record** (collapsed): fake hash chain, purely visual
+
+Never add time-saved, cost-saved or speed numbers.
 
 ## Global requirements
 - A persistent banner on every screen: **"Mockup with fictional data. Not a live product."**
@@ -63,5 +63,5 @@ The screen a security reviewer starts from. It explains the FDE's work in plain 
 
 ## Tech
 - Static site deployable to GitHub Pages from the repo root (or `/docs`): plain HTML, CSS and JavaScript, no build step required
-- Keep the fake data in one file (e.g. `data.js`) so the scenario is easy to edit
+- Keep the fake data and on-screen copy in one file (`data.js`) so the scenario is easy to edit. Only events with `feed: true` are played and reported on; the rest are kept for editing the scenario
 - Repo is public; keep it that way only while it remains a mockup
