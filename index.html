@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FDE Scope Auditor (mockup)</title>
+  <meta name="description" content="Clickable mockup with fictional data. Not a live product.">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="mock-banner" role="note">Mockup with fictional data. Not a live product.</div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-name">FDE Scope Auditor</span>
+      </div>
+      <div class="deploy-chip" id="deploy-chip"></div>
+      <button class="link-btn" id="reset-btn" type="button" title="Reset the demo to its starting state">Reset demo</button>
+    </div>
+    <nav class="stepper" aria-label="Demo steps">
+      <ol>
+        <li><a href="#scope" data-step="scope"><span class="num">1</span><span class="lbl">Scope</span></a></li>
+        <li><a href="#activity" data-step="activity"><span class="num">2</span><span class="lbl">Live activity</span></a></li>
+        <li><a href="#build" data-step="build"><span class="num">3</span><span class="lbl">How it was built</span></a></li>
+        <li><a href="#report" data-step="report"><span class="num">4</span><span class="lbl">Report</span></a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+
+  <footer class="pager">
+    <button type="button" class="btn ghost" id="prev-btn">&larr; Back</button>
+    <span class="pager-hint">Tip: use &larr; &rarr; keys to move between steps</span>
+    <button type="button" class="btn" id="next-btn">Next &rarr;</button>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
